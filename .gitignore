@@ -1,11 +1,37 @@
-# 小爱调试凭证（含 access_token，切勿提交）
+# ===== 敏感凭证（含 access_token，切勿提交）=====
 userinfo.json
+*userinfo*.json
 
-# 浏览器独立配置目录（登录态/缓存）
+# ===== 浏览器独立配置目录（登录态/缓存）=====
 browser_profile/
+browser_profile_*/
 
-# 运行时产物（根目录下的备份，不含 sample_data 里的样例）
+# ===== 运行时产物（根目录备份，不影响 sample_data 样例）=====
 /last_raw.json
 /schedule_*.json
+/schedule_*.csv
+
+# ===== Python =====
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 日志 / 临时文件 =====
+*.log
+_tmp_*
