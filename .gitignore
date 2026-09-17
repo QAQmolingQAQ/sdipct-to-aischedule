@@ -1,0 +1,11 @@
+# 小爱调试凭证（含 access_token，切勿提交）
+userinfo.json
+
+# 浏览器独立配置目录（登录态/缓存）
+browser_profile/
+
+# 运行时产物（根目录下的备份，不含 sample_data 里的样例）
+/last_raw.json
+/schedule_*.json
+__pycache__/
+*.pyc
