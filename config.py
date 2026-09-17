@@ -15,6 +15,11 @@ SCHEDULE_API = "https://jwxt.sdipct.edu.cn/new/student/xsgrkb/getCalendarWeekDat
 # 课表接口 URL 关键字（用于在浏览器网络请求中自动识别）
 SCHEDULE_URL_KEYWORD = "getCalendarWeekDatas"
 
+# 学期日历接口（POST month=YYYY-MM）
+# 返回当月每天的 星期(xqxh) / 周次(zc) / 日期(rq)，据此可确定第1周周一。
+# 例：zc=1 且 xqxh=1 的记录 rq=2026-09-07，即第1周周一。
+CALENDAR_MONTH_API = "https://jwxt.sdipct.edu.cn/new/curMonthXnxq"
+
 # 学年学期代码（202601 = 2026-2027 学年第一学期）
 TERM_CODE = "202601"
 

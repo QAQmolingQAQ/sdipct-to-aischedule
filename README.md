@@ -95,10 +95,15 @@ python main.py --file 你的课表.json
 - 课表页面：`/new/student/xsgrkb/main.page`
 - 课表接口（POST，**乘方教务，按周请求**）：`/new/student/xsgrkb/getCalendarWeekDatas`
   - 表单：`xnxqdm=202601&zc=周次&d1=该周周一 00:00:00&d2=该周周日 00:00:00`（依赖登录 Cookie）
+- 学期日历接口（POST）：`/new/curMonthXnxq`
+  - 表单：`month=2026-09`，返回当月每天的 `xqxh`(星期) / `zc`(周次) / `rq`(日期)
 
 ### 开学日期与作息
 
-- **开学第1周周一自动计算**：工具先以“本周一”为锚点请求一次，从返回记录的 `zc` 字段得知本周是第几周，再按 `第1周周一 = 本周一 − 7×(周次−1)` 反推；读不到时回退到 `config.FIRST_DAY`。
+- **开学第1周周一自动计算**：工具调用学期日历接口 `/new/curMonthXnxq` 取当月的“周次 → 日期”映射，
+  用当月的周一记录按 `第1周周一 = 该周周一 − 7×(该周次−1)` 反推（跨月同样成立）；
+  接口失败时回退到 `config.FIRST_DAY`。
+  > 不要用课表接口返回记录的 `zc` 反推：该字段受请求参数影响，会把开学日算成本周一。
 - **作息时间** 以 `config.SECTIONS` 为准（与教务系统上下课时间一致），`MORNING_NUM/AFTERNOON_NUM/NIGHT_NUM` 控制上午/下午/晚上节数，本学校晚上为 **2 节**。
 - `TERM_CODE`：学年学期，`202601` = 2026–2027 学年第一学期。
 

@@ -148,14 +148,19 @@ def fetch_from_browser():
 def build_fetch_all_js():
     """生成在教务页面内执行的 JS：逐周请求并汇总，返回 records/firstMonday。
 
-    乘方教务 getCalendarWeekDatas：
-      POST xnxqdm=学期&zc=周次&d1=该周周一 00:00:00&d2=该周周日 00:00:00
+    乘方教务接口：
+      POST /new/student/xsgrkb/getCalendarWeekDatas
+           xnxqdm=学期&zc=周次&d1=该周周一 00:00:00&d2=该周周日 00:00:00
+      POST /new/curMonthXnxq  month=YYYY-MM
+           返回当月每天的 星期(xqxh)/周次(zc)/日期(rq)
+
     做法：
-      1) 以“本周一”为锚点请求一次，从返回记录的 zc 字段得知本周是第几周，
-         反推第1周周一 = 本周一 - 7*(本周周次-1)；
+      1) 用 curMonthXnxq 取“周次 -> 日期”映射，按
+         第1周周一 = 某周一日期 - 7*(该周次-1) 得到开学日（跨月也成立）；
       2) 以第1周周一为基准，逐周 1..N 请求并去重汇总。
     """
     api = config.SCHEDULE_API
+    month_api = config.CALENDAR_MONTH_API
     term = config.TERM_CODE
     total = config.TOTAL_WEEK
     return f"""
@@ -174,27 +179,32 @@ def build_fetch_all_js():
         const d=new Date(+p[0],+p[1]-1,+p[2]);d.setDate(d.getDate()+n);
         return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')
              +'-'+String(d.getDate()).padStart(2,'0');}};
-    // 本周一
-    const t=new Date(); const dow=(t.getDay()+6)%7; t.setDate(t.getDate()-dow);
-    const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')
-                  +'-'+String(d.getDate()).padStart(2,'0');
-    const anchor=fmt(t);
-    // 请求锚点周（d1=本周一），记录中的 zc 即真实周次
-    let anchorWeek=0;
-    const ar0=collect(await post('',anchor,addDays(anchor,6)));
-    if(ar0.length){{
-        const ws=ar0.map(x=>+String(x.zc).split(',')[0]).filter(x=>x>0);
-        if(ws.length) anchorWeek=Math.min(...ws);
+    // 学期日历：取当月“星期一”的记录，按周次反推第1周周一
+    async function monthRows(){{
+        const n=new Date();
+        const m=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0');
+        const r=await fetch('{month_api}',{{method:'POST',credentials:'include',
+            headers:{{'content-type':'application/x-www-form-urlencoded; charset=UTF-8',
+                     'x-requested-with':'XMLHttpRequest'}},
+            body:'month='+m}});
+        const j=await r.json().catch(()=>null);
+        return Array.isArray(j&&j.data)?j.data:[];
     }}
-    let firstMonday=null;
-    if(anchorWeek>0) firstMonday=addDays(anchor,-7*(anchorWeek-1));
+    let firstMonday=null,anchorWeek=0;
+    const mons=(await monthRows())
+        .filter(x=>x&&x.rq&&+x.xqxh===1)
+        .sort((a,b)=>+a.zc-+b.zc);
+    if(mons.length){{
+        anchorWeek=+mons[0].zc;
+        if(anchorWeek>0) firstMonday=addDays(String(mons[0].rq).slice(0,10),
+                                             -7*(anchorWeek-1));
+    }}
     // 逐周汇总（有日期基准时按周请求；否则用 zc 空值请求整学期兜底）
     const all=[],seen=new Set();
     const push=arr=>arr.forEach(r=>{{
         const key=[r.kcmc,r.xq,r.ps,r.pe,r.zc,r.jxcdmc2||r.jxcdmc].join('|');
         if(!seen.has(key)){{seen.add(key);all.push(r);}}
     }});
-    push(ar0);
     if(firstMonday){{
         for(let w=1;w<={total};w++){{
             const d1=addDays(firstMonday,7*(w-1));
