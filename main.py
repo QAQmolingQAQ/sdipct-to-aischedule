@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
 """山东石油化工学院 教务系统课表 -> 小爱课程表 一键导入工具。
 
-流程：
-启动独立浏览器 -> 用户登录教务系统 -> 自动捕获课表 JSON ->
-解析预览 -> 读取小爱 UserInfo -> 推送到小爱课程表。
+启动后显示菜单：
+    1. 自动获取课表并推送小爱课程表
+    2. 仅获取课表（保存为 JSON，不推送）
+    3. 推送之前自动获取的 JSON（last_raw.json）
+
+流程（选项 1）：启动独立浏览器 -> 用户登录教务系统 -> 在页面内逐周请求
+并汇总课表 JSON -> 解析预览 -> 读取小爱 UserInfo -> 推送到小爱课程表。
 
 用法：
-    python main.py                 # 完整流程（浏览器抓取 + 推送）
-    python main.py --file x.json   # 用本地 F12 抓包 JSON 直接解析推送（不走浏览器）
+    python main.py                 # 显示菜单
+    python main.py --file x.json   # 用本地 F12 抓包 JSON 直接解析推送（跳过菜单）
+    python main.py --yes           # 推送前不再确认
 
 仅提供学习辅助，导入结果请以教务系统为准。
 """
@@ -126,8 +131,9 @@ def fetch_from_browser():
     first_day = result.get("firstMonday") or config.FIRST_DAY
     print(f"开学第1周周一：{first_day}")
 
-    # 保存原始汇总数据备查
-    raw = {"code": 0, "data": records, "message": "merged"}
+    # 保存原始汇总数据备查（含开学日，供“推送上次获取的 JSON”复用）
+    raw = {"code": 0, "data": records, "message": "merged",
+           "firstMonday": first_day}
     raw_path = os.path.join(app_dir(), "last_raw.json")
     with open(raw_path, "w", encoding="utf-8") as f:
         json.dump(raw, f, ensure_ascii=False, indent=2)
@@ -213,34 +219,46 @@ def normalize_raw(raw):
     return raw
 
 
-def main():
-    parser = argparse.ArgumentParser(description="教务课表 -> 小爱课程表")
-    parser.add_argument("--file", help="使用本地抓包 JSON，跳过浏览器抓取")
-    parser.add_argument("--yes", action="store_true", help="解析后不询问直接推送")
-    args = parser.parse_args()
+def choose_mode():
+    """启动后显示菜单并读取用户选择。"""
+    print("请选择操作：")
+    print("  1. 自动获取课表并推送小爱课程表")
+    print("  2. 仅获取课表（保存为 JSON，不推送）")
+    print("  3. 推送之前自动获取的 JSON（last_raw.json）")
+    while True:
+        c = input("输入 1 / 2 / 3：").strip()
+        if c in ("1", "2", "3"):
+            return c
+        print("输入无效，请输入 1、2 或 3。")
 
-    print("====== 山东石油化工学院 课表 -> 小爱课程表 导入工具 ======")
-    print("提示：导入后请与教务系统核对，一切以教务系统显示为准。\n")
 
-    if args.file:
-        with open(args.file, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-        # 离线模式：开学日用配置值，作息用 config.SECTIONS
-        first_day = config.FIRST_DAY
-        sections = config.SECTIONS
-    else:
-        raw, first_day, sections = fetch_from_browser()
+def load_last_raw():
+    """读取上次抓取的 last_raw.json，返回 (raw, first_day)。"""
+    path = os.path.join(app_dir(), "last_raw.json")
+    if not os.path.exists(path):
+        print(f"未找到上次获取的数据：{path}")
+        print("请先执行选项 1 或 2 获取课表。")
+        sys.exit(1)
+    with open(path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    first_day = raw.get("firstMonday") or config.FIRST_DAY
+    return raw, first_day
 
-    raw = normalize_raw(raw)
-    courses = parse_schedule(raw)
+
+def parse_and_preview(raw):
+    """解析课表并预览、保存备份，返回课程列表。"""
+    courses = parse_schedule(normalize_raw(raw))
     if not courses:
         print("未解析出任何课程，请检查原始数据或解析规则。")
         sys.exit(1)
-
     show_preview(courses)
     save_backup(courses)
+    return courses
 
-    if not args.yes:
+
+def confirm_and_push(courses, first_day, sections, assume_yes=False):
+    """确认后推送到小爱课程表。"""
+    if not assume_yes:
         ans = input("确认推送到小爱课程表？(回车继续 / q 取消): ").strip().lower()
         if ans == "q":
             return
@@ -268,11 +286,61 @@ def main():
     print("请退出小爱课程表重新进入，右上角切换课表即可查看。")
 
 
+def main():
+    parser = argparse.ArgumentParser(description="教务课表 -> 小爱课程表")
+    parser.add_argument("--file", help="使用本地抓包 JSON，跳过菜单直接解析并推送")
+    parser.add_argument("--yes", action="store_true", help="解析后不询问直接推送")
+    args = parser.parse_args()
+
+    print("====== 山东石油化工学院 课表 -> 小爱课程表 导入工具 ======")
+    print("提示：导入后请与教务系统核对，一切以教务系统显示为准。\n")
+
+    # --file：直接用本地 JSON，跳过菜单
+    if args.file:
+        with open(args.file, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        first_day = config.FIRST_DAY
+        if isinstance(raw, dict) and raw.get("firstMonday"):
+            first_day = raw["firstMonday"]
+        courses = parse_and_preview(raw)
+        confirm_and_push(courses, first_day, config.SECTIONS, args.yes)
+        return
+
+    mode = choose_mode()
+    print()
+
+    if mode == "2":
+        # 仅获取课表，不推送
+        raw, first_day, sections = fetch_from_browser()
+        parse_and_preview(raw)
+        print("已获取并保存课表（未推送）。")
+        return
+
+    if mode == "3":
+        # 推送之前自动获取的 JSON
+        raw, first_day = load_last_raw()
+        print(f"读取到上次获取的数据，开学第1周周一：{first_day}")
+        sections = config.SECTIONS
+        courses = parse_and_preview(raw)
+        confirm_and_push(courses, first_day, sections, args.yes)
+        return
+
+    # mode == "1"：自动获取课表并推送
+    raw, first_day, sections = fetch_from_browser()
+    courses = parse_and_preview(raw)
+    confirm_and_push(courses, first_day, sections, args.yes)
+
+
 if __name__ == "__main__":
     try:
         main()
+    except KeyboardInterrupt:
+        print("\n已取消。")
     except Exception:
         import traceback
         print("发生异常：\n" + traceback.format_exc())
-        input("按回车键退出...")
+        try:
+            input("按回车键退出...")
+        except EOFError:
+            pass
         sys.exit(1)
