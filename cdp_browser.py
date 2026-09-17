@@ -49,10 +49,17 @@ def find_browser():
 
 
 def launch_browser(exe, profile_dir, port, url):
+    # 必须用绝对路径：Edge/Chrome 会以相对路径解析 --user-data-dir，
+    # 相对路径或目录不可写时会弹“无法创建数据目录”并退出。
+    profile_dir = os.path.abspath(profile_dir)
+    os.makedirs(profile_dir, exist_ok=True)
     args = [
         exe,
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile_dir}",
+        # 新版 Edge/Chrome 默认拒绝来自 127.0.0.1 的 CDP WebSocket，
+        # 必须显式放行来源，否则握手返回 403。
+        "--remote-allow-origins=*",
         "--no-first-run",
         "--no-default-browser-check",
         url,
