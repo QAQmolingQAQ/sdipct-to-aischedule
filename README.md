@@ -24,12 +24,17 @@ pip install -r requirements.txt
 
 ## 准备小爱课程表调试数据（UserInfo）
 
+推送课表需要一份“UserInfo”调试数据（含登录令牌），保存为项目目录下的 `userinfo.json`。
+
 1. 打开手机小爱课程表（独立版需先登录），点右下角**头像/设置**
 2. 把页面滑到最底部，在“开始新学期”下方的**空白处连点 5 次**，进入 Debug 页
 3. 点击“**点击获取 UserInfo**”，在弹窗中复制
-4. 将复制内容保存为项目目录下的 `userinfo.json`（一整行 JSON）
+4. 将复制内容**原样粘贴**（一整行 JSON，不要换行/加注释），保存为项目目录下的 `userinfo.json`（UTF-8）
+
+详细图文步骤、校验方法与常见问题见 **[如何获取userinfo.txt](如何获取userinfo.txt)**。
 
 > `userinfo.json` 含登录令牌，已在 `.gitignore` 中忽略，**切勿分享或提交**。
+> 令牌会过期，若推送报鉴权失败请重新获取。
 
 ## 使用
 
@@ -74,7 +79,7 @@ python main.py
 python main.py --file 你的课表.json
 ```
 
-跳过浏览器，直接解析并推送。样例见 `sample_data/schedule_raw.json`。
+跳过浏览器，直接解析并推送。
 
 ## 配置
 
@@ -103,10 +108,10 @@ python main.py --file 你的课表.json
 config.py            学校 / 学期 / 开学日 / 作息时间配置
 cdp_browser.py       CDP 浏览器：启动、登录检测、页面内执行 JS
 term_meta.py         开学周日期反推工具
-schedule_parser.py   课表 JSON 解析（纯函数，含样例测试）
+schedule_parser.py   课表 JSON 解析（纯函数）
 aischedule_push.py   小爱课程表云端推送
 main.py              主流程入口
-sample_data/         真实抓包样例与期望解析结果
+如何获取userinfo.txt   UserInfo 调试数据获取说明
 ```
 
 ## 常见问题
@@ -114,7 +119,8 @@ sample_data/         真实抓包样例与期望解析结果
 - **已存在同名课表**：先在小爱课程表 App 中删除同名课表，或改 `config.py` 的 `TABLE_NAME`
 - **课表数量已达上限**：在 App 中删除不需要的课表
 - **提示 course info has overlap（时间冲突）**：该节与已有课程时间重叠被跳过，终端会列出，请手动核对
-- **抓到 0 门课**：该学期课表可能尚未发布，或接口结构有变，请用 `--file` 配合 `sample_data` 反馈
+- **抓到 0 门课**：该学期课表可能尚未发布，或接口结构有变；可用 `--file` 传入 F12 抓到的原始 JSON 复现并反馈
+- **推送报鉴权失败 / UserInfo 字段缺失**：按 [如何获取userinfo.txt](如何获取userinfo.txt) 重新获取 `userinfo.json`
 
 ## 致谢
 

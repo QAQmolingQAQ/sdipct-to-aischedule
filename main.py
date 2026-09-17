@@ -40,6 +40,7 @@ def load_userinfo():
         print("获取方法：小爱课程表 -> 右下角头像(设置) -> 滑到最底部 ->")
         print("在“开始新学期”下方空白处连点5次进入 Debug 页 ->")
         print("点击“获取 UserInfo” -> 复制，保存为项目下的 userinfo.json")
+        print("详细步骤见项目根目录的《如何获取userinfo.txt》")
         sys.exit(1)
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
