@@ -114,7 +114,11 @@ class AiSchedulePusher:
         return ct_id
 
     def configure_table(self, ct_id, name, sections, first_day, total_week,
-                        morning_num=4, afternoon_num=4, night_num=2):
+                        morning_num=4, afternoon_num=4, night_num=2,
+                        week_start=1):
+        # 小爱接口的 startSemester 需要“毫秒时间戳”，传日期字符串不会生效
+        first_day_ms = _first_day_ms(first_day)
+        print(f"开学日期：{first_day}（startSemester={first_day_ms}）")
         r = requests.get(
             f"{self.url_root}/course-multi-auth/table"
             f"?ctId={ct_id}&sourceName={self.source_name}",
@@ -127,7 +131,7 @@ class AiSchedulePusher:
         setting_id = r["data"]["setting"]["id"]
 
         extend = json_dumps({
-            "startSemester": first_day,
+            "startSemester": first_day_ms,
             "degree": "本科/专科",
             "showNotInWeek": True,
             "bgSetting": {"name": "default", "opacity": 1},
@@ -145,13 +149,42 @@ class AiSchedulePusher:
                     "nightNum": night_num,
                     "presentWeek": 1, "school": "{}",
                     "sections": json_dumps(sections), "speak": 1,
-                    "startSemester": first_day, "totalWeek": total_week,
-                    "weekStart": 7,
+                    "startSemester": first_day_ms, "totalWeek": total_week,
+                    "weekStart": week_start,
                 },
             },
             timeout=20).json()
         if r.get("code") != 0:
             raise PushError(f"修改课表配置失败：{r.get('code')} {r.get('desc')}")
+
+    def verify_table(self, ct_id, log=print):
+        """读回刚写入的课表设置并打印，便于与 App 中显示核对。"""
+        import json
+        from datetime import datetime
+        try:
+            r = requests.get(
+                f"{self.url_root}/course-multi-auth/tables"
+                f"?sourceName={self.source_name}",
+                headers=self._headers(with_origin=True), timeout=20).json()
+        except Exception as e:
+            log(f"（读回校验失败：{e}）")
+            return
+        for t in (r.get("data") or []):
+            if str(t.get("id")) != str(ct_id):
+                continue
+            s = t.get("setting", {}) or {}
+            ms = s.get("startSemester")
+            try:
+                date = datetime.fromtimestamp(int(ms) / 1000).strftime("%Y-%m-%d")
+            except (TypeError, ValueError):
+                date = str(ms)
+            secs = json.loads(s["sections"]) if s.get("sections") else []
+            log(f"[校验] 开学日期={date} 周起始={s.get('weekStart')} "
+                f"总周数={s.get('totalWeek')} 作息节数={len(secs)} "
+                f"(上午{s.get('morningNum')}/下午{s.get('afternoonNum')}/"
+                f"晚{s.get('nightNum')})")
+            return
+        log("（读回校验：未在课表列表中找到该课表）")
 
     def add_course(self, ct_id, course):
         body = {
@@ -177,13 +210,15 @@ class AiSchedulePusher:
         return r
 
     def push_all(self, courses, name, sections, first_day, total_week=20,
-                 morning_num=4, afternoon_num=4, night_num=2, log=print):
+                 morning_num=4, afternoon_num=4, night_num=2,
+                 week_start=1, log=print):
         log(f"识别来源：{self.kind}")
         ct_id = self.create_table(name)
         log(f"课表创建成功：{name} (id={ct_id})")
         self.configure_table(ct_id, name, sections, first_day, total_week,
-                             morning_num, afternoon_num, night_num)
+                             morning_num, afternoon_num, night_num, week_start)
         log("作息时间与开学日期设置成功")
+        self.verify_table(ct_id, log)
 
         ok, overlap, fail = 0, [], []
         for i, c in enumerate(courses, 1):
@@ -206,3 +241,20 @@ def json_dumps(obj):
     # 紧凑 JSON，分隔符与官方一致
     import json
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def _first_day_ms(value):
+    """开学日 -> 毫秒时间戳字符串（小爱接口需要）。
+
+    支持 "YYYY-MM-DD" / "YYYY-MM-DD HH:MM:SS" / 已是数字（秒或毫秒）。
+    """
+    if isinstance(value, (int, float)):
+        n = int(value)
+        return str(n * 1000 if n < 10 ** 11 else n)
+    s = str(value).strip()
+    if s.isdigit():
+        n = int(s)
+        return str(n * 1000 if n < 10 ** 11 else n)
+    from datetime import datetime
+    dt = datetime.strptime(s.split(" ")[0], "%Y-%m-%d")
+    return str(int(dt.timestamp()) * 1000)

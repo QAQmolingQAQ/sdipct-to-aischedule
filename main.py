@@ -271,7 +271,8 @@ def confirm_and_push(courses, first_day, sections, assume_yes=False):
             first_day, config.TOTAL_WEEK,
             morning_num=config.MORNING_NUM,
             afternoon_num=config.AFTERNOON_NUM,
-            night_num=config.NIGHT_NUM)
+            night_num=config.NIGHT_NUM,
+            week_start=config.WEEK_START)
     except PushError as e:
         print(f"推送失败：{e}")
         sys.exit(1)
