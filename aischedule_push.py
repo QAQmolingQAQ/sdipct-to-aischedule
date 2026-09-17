@@ -113,7 +113,8 @@ class AiSchedulePusher:
             raise PushError(f"创建课表失败：{r.get('desc')}")
         return ct_id
 
-    def configure_table(self, ct_id, name, sections, first_day, total_week):
+    def configure_table(self, ct_id, name, sections, first_day, total_week,
+                        morning_num=4, afternoon_num=4, night_num=2):
         r = requests.get(
             f"{self.url_root}/course-multi-auth/table"
             f"?ctId={ct_id}&sourceName={self.source_name}",
@@ -138,8 +139,10 @@ class AiSchedulePusher:
                 "ctId": ct_id, "deviceId": self.device_id, "name": name,
                 "sourceName": self.source_name, "userId": self.user_id,
                 "setting": {
-                    "afternoonNum": 4, "extend": extend, "id": setting_id,
-                    "isWeekend": 1, "morningNum": 4, "nightNum": 4,
+                    "afternoonNum": afternoon_num, "extend": extend,
+                    "id": setting_id,
+                    "isWeekend": 1, "morningNum": morning_num,
+                    "nightNum": night_num,
                     "presentWeek": 1, "school": "{}",
                     "sections": json_dumps(sections), "speak": 1,
                     "startSemester": first_day, "totalWeek": total_week,
@@ -173,11 +176,13 @@ class AiSchedulePusher:
             headers=self._headers(with_origin=True), json=body, timeout=20).json()
         return r
 
-    def push_all(self, courses, name, sections, first_day, total_week=20, log=print):
+    def push_all(self, courses, name, sections, first_day, total_week=20,
+                 morning_num=4, afternoon_num=4, night_num=2, log=print):
         log(f"识别来源：{self.kind}")
         ct_id = self.create_table(name)
         log(f"课表创建成功：{name} (id={ct_id})")
-        self.configure_table(ct_id, name, sections, first_day, total_week)
+        self.configure_table(ct_id, name, sections, first_day, total_week,
+                             morning_num, afternoon_num, night_num)
         log("作息时间与开学日期设置成功")
 
         ok, overlap, fail = 0, [], []

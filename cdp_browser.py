@@ -189,3 +189,5 @@ class CDPClient:
             self.ws.close()
         except Exception:
             pass
+
+

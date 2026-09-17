@@ -20,7 +20,7 @@ import time
 import config
 from schedule_parser import parse_schedule
 from aischedule_push import AiSchedulePusher, PushError
-from cdp_browser import (find_browser, free_port, launch_browser, CDPClient)
+from cdp_browser import find_browser, free_port, launch_browser, CDPClient
 
 
 def app_dir():
@@ -100,44 +100,106 @@ def fetch_from_browser():
         proc.terminate()
         sys.exit(1)
     print("登录成功，正在打开个人课表页并抓取数据...")
-
-    # 打开课表页，开始监听接口（先开监听再导航，避免漏掉请求）
-    # 通过 JS 跳转
     client.eval(f'location.href="{config.SCHEDULE_PAGE_URL}"')
-    time.sleep(2)
-    # 若页面需要选择学期，再触发一次按周数据请求（多数系统进入即请求）
+    time.sleep(3)
+
+    # 在页面上下文（带登录 Cookie）逐周请求并汇总全学期课表。
+    # 先请求第1周：响应/请求里的 d1 即第1周周一，由此自动得到开学日期，
+    # 再以 7 天为步长推算后续各周的 d1/d2，循环到总周数。
+    js = build_fetch_all_js()
     try:
-        raw = client.capture_schedule(
-            config.SCHEDULE_URL_KEYWORD, config.SCHEDULE_JSON_HINTS, timeout=45)
-    except TimeoutError:
-        # 兜底：直接在页面上下文里 fetch 接口（带登录 Cookie）
-        print("未监听到响应，尝试在页面内直接请求接口...")
-        expr = f"""
-        (async()=>{{
-            const r = await fetch("{config.SCHEDULE_API}", {{
-                method:'POST',
-                headers:{{'content-type':'application/x-www-form-urlencoded; charset=UTF-8','x-requested-with':'XMLHttpRequest'}},
-                body:'xnxqdm={config.TERM_CODE}&zc=&d1=&d2=',
-                credentials:'include'
-            }});
-            return await r.text();
-        }})()
-        """
-        body = client.eval(expr)
-        raw = json.loads(body) if body else None
+        result = client.eval(js)
+    except Exception as e:
+        client.close()
+        proc.terminate()
+        print(f"请求课表接口失败：{e}")
+        sys.exit(1)
 
     client.close()
     proc.terminate()
-    if raw is None:
-        print("未能获取到课表数据。")
+
+    if not result or not result.get("records"):
+        print("未能获取到课表数据，请确认课表页已正常加载、该学期有课。")
         sys.exit(1)
 
-    # 保存原始数据备查
+    records = result["records"]
+    first_day = result.get("firstMonday") or config.FIRST_DAY
+    print(f"开学第1周周一：{first_day}")
+
+    # 保存原始汇总数据备查
+    raw = {"code": 0, "data": records, "message": "merged"}
     raw_path = os.path.join(app_dir(), "last_raw.json")
     with open(raw_path, "w", encoding="utf-8") as f:
         json.dump(raw, f, ensure_ascii=False, indent=2)
-    print(f"原始课表已保存：{raw_path}")
-    return raw
+    print(f"原始课表已保存：{raw_path}（共 {len(records)} 条原始记录）")
+
+    # 作息时间以 config.SECTIONS 为权威（与教务上下课时间一致）
+    sections = config.SECTIONS
+    return raw, first_day, sections
+
+
+def build_fetch_all_js():
+    """生成在教务页面内执行的 JS：逐周请求并汇总，返回 records/firstMonday。
+
+    乘方教务 getCalendarWeekDatas：
+      POST xnxqdm=学期&zc=周次&d1=该周周一 00:00:00&d2=该周周日 00:00:00
+    做法：
+      1) 以“本周一”为锚点请求一次，从返回记录的 zc 字段得知本周是第几周，
+         反推第1周周一 = 本周一 - 7*(本周周次-1)；
+      2) 以第1周周一为基准，逐周 1..N 请求并去重汇总。
+    """
+    api = config.SCHEDULE_API
+    term = config.TERM_CODE
+    total = config.TOTAL_WEEK
+    return f"""
+(async()=>{{
+    async function post(zc,d1,d2){{
+        const body=new URLSearchParams({{xnxqdm:'{term}',zc:String(zc),
+            d1:d1?d1+' 00:00:00':'',d2:d2?d2+' 00:00:00':''}});
+        const r=await fetch('{api}',{{method:'POST',credentials:'include',
+            headers:{{'content-type':'application/x-www-form-urlencoded; charset=UTF-8',
+                     'x-requested-with':'XMLHttpRequest'}},
+            body:body.toString()}});
+        return await r.json().catch(()=>null);
+    }}
+    const collect=res=>Array.isArray(res&&res.data)?res.data:[];
+    const addDays=(s,n)=>{{const p=s.split('-');
+        const d=new Date(+p[0],+p[1]-1,+p[2]);d.setDate(d.getDate()+n);
+        return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')
+             +'-'+String(d.getDate()).padStart(2,'0');}};
+    // 本周一
+    const t=new Date(); const dow=(t.getDay()+6)%7; t.setDate(t.getDate()-dow);
+    const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')
+                  +'-'+String(d.getDate()).padStart(2,'0');
+    const anchor=fmt(t);
+    // 请求锚点周（d1=本周一），记录中的 zc 即真实周次
+    let anchorWeek=0;
+    const ar0=collect(await post('',anchor,addDays(anchor,6)));
+    if(ar0.length){{
+        const ws=ar0.map(x=>+String(x.zc).split(',')[0]).filter(x=>x>0);
+        if(ws.length) anchorWeek=Math.min(...ws);
+    }}
+    let firstMonday=null;
+    if(anchorWeek>0) firstMonday=addDays(anchor,-7*(anchorWeek-1));
+    // 逐周汇总（有日期基准时按周请求；否则用 zc 空值请求整学期兜底）
+    const all=[],seen=new Set();
+    const push=arr=>arr.forEach(r=>{{
+        const key=[r.kcmc,r.xq,r.ps,r.pe,r.zc,r.jxcdmc2||r.jxcdmc].join('|');
+        if(!seen.has(key)){{seen.add(key);all.push(r);}}
+    }});
+    push(ar0);
+    if(firstMonday){{
+        for(let w=1;w<={total};w++){{
+            const d1=addDays(firstMonday,7*(w-1));
+            push(collect(await post(w,d1,addDays(d1,6))));
+        }}
+    }}else{{
+        push(collect(await post('','','')));
+    }}
+    return {{records:all,firstMonday:firstMonday,anchorWeek:anchorWeek}};
+}})()
+"""
+
 
 
 def normalize_raw(raw):
@@ -163,8 +225,11 @@ def main():
     if args.file:
         with open(args.file, "r", encoding="utf-8") as f:
             raw = json.load(f)
+        # 离线模式：开学日用配置值，作息用 config.SECTIONS
+        first_day = config.FIRST_DAY
+        sections = config.SECTIONS
     else:
-        raw = fetch_from_browser()
+        raw, first_day, sections = fetch_from_browser()
 
     raw = normalize_raw(raw)
     courses = parse_schedule(raw)
@@ -184,8 +249,11 @@ def main():
     try:
         pusher = AiSchedulePusher(userinfo)
         result = pusher.push_all(
-            courses, config.TABLE_NAME, config.SECTIONS,
-            config.FIRST_DAY, config.TOTAL_WEEK)
+            courses, config.TABLE_NAME, sections,
+            first_day, config.TOTAL_WEEK,
+            morning_num=config.MORNING_NUM,
+            afternoon_num=config.AFTERNOON_NUM,
+            night_num=config.NIGHT_NUM)
     except PushError as e:
         print(f"推送失败：{e}")
         sys.exit(1)

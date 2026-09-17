@@ -69,14 +69,21 @@ python main.py --file 你的课表.json
 
 - 登录入口：`https://jwxt.sdipct.edu.cn/`
 - 课表页面：`/new/student/xsgrkb/main.page`
-- 课表接口（POST）：`/new/student/xsgrkb/getCalendarWeekDatas`
-  - 表单：`xnxqdm=202601&zc=&d1=...&d2=...`（依赖登录 Cookie）
+- 课表接口（POST，**乘方教务，按周请求**）：`/new/student/xsgrkb/getCalendarWeekDatas`
+  - 表单：`xnxqdm=202601&zc=周次&d1=该周周一 00:00:00&d2=该周周日 00:00:00`（依赖登录 Cookie）
+
+### 开学日期与作息
+
+- **开学第1周周一自动计算**：工具先以“本周一”为锚点请求一次，从返回记录的 `zc` 字段得知本周是第几周，再按 `第1周周一 = 本周一 − 7×(周次−1)` 反推；读不到时回退到 `config.FIRST_DAY`。
+- **作息时间** 以 `config.SECTIONS` 为准（与教务系统上下课时间一致），`MORNING_NUM/AFTERNOON_NUM/NIGHT_NUM` 控制上午/下午/晚上节数，本学校晚上为 **2 节**。
+- `TERM_CODE`：学年学期，`202601` = 2026–2027 学年第一学期。
 
 ## 项目结构
 
 ```
-config.py            学校 / 学期 / 作息时间配置
-cdp_browser.py       CDP 浏览器：启动、登录检测、网络抓包
+config.py            学校 / 学期 / 开学日 / 作息时间配置
+cdp_browser.py       CDP 浏览器：启动、登录检测、页面内执行 JS
+term_meta.py         开学周日期反推工具
 schedule_parser.py   课表 JSON 解析（纯函数，含样例测试）
 aischedule_push.py   小爱课程表云端推送
 main.py              主流程入口

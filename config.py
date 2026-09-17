@@ -9,7 +9,7 @@ WELCOME_URL = "https://jwxt.sdipct.edu.cn/new/welcome.page?ui=new"
 # 个人课表页面（在浏览器中打开后会自动请求数据接口）
 SCHEDULE_PAGE_URL = "https://jwxt.sdipct.edu.cn/new/student/xsgrkb/main.page"
 
-# 课表数据接口（POST，学年学期 + 日期范围）
+# 课表数据接口（POST，按周请求：xnxqdm=学期, zc=周次, d1/d2=该周周一/周日）
 SCHEDULE_API = "https://jwxt.sdipct.edu.cn/new/student/xsgrkb/getCalendarWeekDatas"
 
 # 课表接口 URL 关键字（用于在浏览器网络请求中自动识别）
@@ -24,11 +24,17 @@ SCHEDULE_JSON_HINTS = ["kcmc", "jxcdmc", "teaxms", "jcdm", "xnxqdm"]
 # 课表名称（在小爱课程表中显示）
 TABLE_NAME = "2026-2027学年第一学期"
 
-# 开学日期（第1周周一），用于小爱课程表推算日期
+# 开学日期兜底值（第1周周一）。
+# 工具会优先从教务系统课表页自动读取真实开学日；读不到时才用此值。
 FIRST_DAY = "2026-09-07"
 
 # 总周数
 TOTAL_WEEK = 20
+
+# 一天各时段的节数（上午/下午/晚上），晚上只有 2 节
+MORNING_NUM = 4
+AFTERNOON_NUM = 4
+NIGHT_NUM = 2
 
 # 作息时间表（依据学校实际上下课时间）
 SECTIONS = [
