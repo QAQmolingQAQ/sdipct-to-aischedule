@@ -178,7 +178,13 @@ class AiSchedulePusher:
                 date = datetime.fromtimestamp(int(ms) / 1000).strftime("%Y-%m-%d")
             except (TypeError, ValueError):
                 date = str(ms)
-            secs = json.loads(s["sections"]) if s.get("sections") else []
+            # 写入时字段名为 sections，服务端返回时叫 sectionTimes
+            secs = s.get("sectionTimes") or s.get("sections") or []
+            if isinstance(secs, str):
+                try:
+                    secs = json.loads(secs) if secs else []
+                except ValueError:
+                    secs = []
             log(f"[校验] 开学日期={date} 周起始={s.get('weekStart')} "
                 f"总周数={s.get('totalWeek')} 作息节数={len(secs)} "
                 f"(上午{s.get('morningNum')}/下午{s.get('afternoonNum')}/"
