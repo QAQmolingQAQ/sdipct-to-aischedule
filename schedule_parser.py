@@ -98,7 +98,47 @@ def parse_schedule(raw):
                 "weeks": sorted(set(weeks)), "day": day, "sections": sections,
             })
 
-    return _merge(items)
+    return _merge(_drop_summary(items))
+
+
+def _teacher_tokens(teacher):
+    """教师字段 -> 姓名集合（兼容中英文逗号）。"""
+    return {t.strip() for t in str(teacher).replace("，", ",").split(",")
+            if t.strip()}
+
+
+def _drop_summary(items):
+    """丢弃教务系统给出的“多周汇总”冗余条目。
+
+    同一(课程/星期/节次/教室)下，若已存在单周记录，且某多周记录的周次与
+    教师姓名都被这些单周记录完全覆盖，则该多周记录只是汇总行（例如
+    “李晓玮,徐贺睿 / 周1,6,8,11,13,15”是“李晓玮 周1,6”与
+    “徐贺睿 周8,11,13,15”的汇总），予以丢弃。单周记录才是真实授课安排。
+    未被完全覆盖的多周记录仍然保留，避免误删真实数据。
+    """
+    groups = {}
+    for it in items:
+        key = (it["name"], it["day"], tuple(it["sections"]), it["position"])
+        groups.setdefault(key, []).append(it)
+
+    result = []
+    for group in groups.values():
+        singles = [it for it in group if len(it["weeks"]) == 1]
+        if not singles:
+            result.extend(group)
+            continue
+        single_weeks = set()
+        single_teachers = set()
+        for it in singles:
+            single_weeks.update(it["weeks"])
+            single_teachers.update(_teacher_tokens(it["teacher"]))
+        for it in group:
+            if len(it["weeks"]) == 1:
+                result.append(it)
+            elif not (set(it["weeks"]) <= single_weeks
+                      and _teacher_tokens(it["teacher"]) <= single_teachers):
+                result.append(it)
+    return result
 
 
 def _merge(items):
